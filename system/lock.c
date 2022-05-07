@@ -48,9 +48,9 @@ local	lid32	newlock(void)
 	//TODO END
 
 	for (i = 0; i < NLOCK; i++) {
-		if (locktab->state == LOCK_FREE) {
-			locktab->state = LOCK_USED;
-			locktab->lock = FALSE;
+		if (locktab[i].state == LOCK_FREE) {
+			locktab[i].state = LOCK_USED;
+			locktab[i].lock = FALSE;
 			return i;
 		}
 	}
