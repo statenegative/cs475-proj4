@@ -1,74 +1,19 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
+#include <xinu.h>
+#include <stddef.h>
 
-#define NLOCK   10
-#define NPROC   20
+//TODO - add in your functions
 
-struct RAG_Node {
-    struct RAG_Node *next;
-    int id;
-};
-
-static struct RAG_Node *RAG[NLOCK + NPROC];
 static unsigned char visited[NLOCK + NPROC];
-
-/** Adds a request edge to the RAG from pid to lockid. */
-void rag_request(int pid, int lockid);
-
-/**
- * Adds an allocation edge to the RAG from lockid to pid. Removes the request
- * edge from pid to lockid.
- */
-void rag_alloc(int pid, int lockid);
-
-/** Removes the request or allocation edge from lockid to pid. */
-void rag_dealloc(int pid, int lockid);
-
-/** Prints the adjacency matrix or list representing the current RAG. */
-void rag_print();
-
-/**
- * Checks the RAG for cycles. For each cycle found, prints out DEADLOCK
- * followed by the nodes involved in the cycle. If no cycles are found, then
- * the system is deadlock-free.
- */
-void deadlock_detect();
+// ID of a lock that is involved in the deadlock
+static lid32    dl_id;
 
 /** Removes the edge from src to dest. */
-static int dealloc_ord(int dest, int src);
+static int dealloc_ord(int32 dest, int32 src);
 
 /** Checks whether curr is a part of a cycle. */
-static int has_cycle(int curr);
+static int has_cycle(int32 curr);
 
-int main(void) {
-    enum { BUF_LEN = 1024 };
-    char buf[BUF_LEN];
-    int len, i;
-
-    scanf("%d\n", &len);
-    for (i = 0; i < len; ++i) {
-        int pid, lockid;
-        char type;
-
-        fgets(buf, BUF_LEN, stdin);
-        sscanf(buf, "%d\t%c\t%d", &pid, &type, &lockid);
-
-        if (type == 'R')
-            rag_request(pid, lockid);
-        else if (type == 'A')
-            rag_alloc(pid, lockid);
-        else
-            rag_dealloc(pid, lockid);
-    }
-
-    rag_print();
-    deadlock_detect();
-
-    return 0;
-}
-
-void rag_request(int pid, int lockid)
+void rag_request(pid32 pid, lid32 lockid)
 {
     /* Allocate and emplace node */
     struct RAG_Node *node = malloc(sizeof *node);
@@ -77,10 +22,10 @@ void rag_request(int pid, int lockid)
     RAG[NLOCK + pid] = node;
 }
 
-void rag_alloc(int pid, int lockid)
+void rag_alloc(pid32 pid, lid32 lockid)
 {
     struct RAG_Node *node, *remove;
-    size_t i;
+    int32 i;
 
     /* Allocate and emplace node */
     node = malloc(sizeof *node);
@@ -92,7 +37,7 @@ void rag_alloc(int pid, int lockid)
     dealloc_ord(lockid, NLOCK + pid);
 }
 
-void rag_dealloc(int pid, int lockid)
+void rag_dealloc(pid32 pid, lid32 lockid)
 {
     /* First search for a request edge, and if not found search for an alloc edge */
     if (!dealloc_ord(lockid, NLOCK + pid))
@@ -101,36 +46,36 @@ void rag_dealloc(int pid, int lockid)
 
 void rag_print()
 {
-    size_t i;
+    int32 i;
     struct RAG_Node *node;
 
     for (i = 0; i < NLOCK + NPROC; ++i) {
         /* Print node label */
         if (i < NLOCK)
-            printf("L%lu", i);
+            kprintf("L%d", i);
         else
-            printf("p%lu", i - NLOCK);
+            kprintf("p%d", i - NLOCK);
         
         /* Print connected edges */
         node = RAG[i];
         if (node == NULL) {
-            printf(" -> NULL");
+            kprintf(" -> NULL");
         } else {
             for (; node != NULL; node = node->next) {
                 if (node->id < NLOCK)
-                    printf(" -> L%lu", node->id);
+                    kprintf(" -> L%d", node->id);
                 else
-                    printf(" -> p%lu", node->id - NLOCK);
+                    kprintf(" -> p%d", node->id - NLOCK);
             }
         }
 
-        printf("\n");
+        kprintf("\n");
     }
 }
 
-void deadlock_detect()
+int deadlock_detect()
 {
-    size_t i, j;
+    int32 i, j;
 
     for (i = NLOCK; i < NLOCK + NPROC; ++i) {
         /* Clear visited array */
@@ -138,13 +83,15 @@ void deadlock_detect()
             visited[j] = 0;
 
         if (has_cycle(i)) {
-            printf("\n");
-            break;
+            kprintf("\n");
+            return 1;
         }
     }
+
+    return 0;
 }
 
-static int dealloc_ord(int dest, int src)
+static int dealloc_ord(int32 dest, int32 src)
 {
     struct RAG_Node *node, *remove;
     int found = 0;
@@ -156,14 +103,14 @@ static int dealloc_ord(int dest, int src)
     if (RAG[src]->id == dest) {
         remove = RAG[src];
         RAG[src] = RAG[src]->next;
-        free(remove);
+        free(remove, sizeof(*remove));
     } else {
         /* If request edge wasn't at the head, search the list */
         for (node = RAG[src]; node->next != NULL; node = node->next) {
             if (node->next->id == dest) {
                 remove = node->next;
                 node->next = node->next->next;
-                free(remove);
+                free(remove, sizeof(*remove));
                 found = 1;
                 break;
             }
@@ -173,7 +120,7 @@ static int dealloc_ord(int dest, int src)
     return found;
 }
 
-static int has_cycle(int curr)
+static int has_cycle(int32 curr)
 {
     struct RAG_Node *node;
 
@@ -184,12 +131,13 @@ static int has_cycle(int curr)
     for (node = RAG[curr]; node != NULL; node = node->next) {
         /* If origin was found, a cycle has occurred */
         if (visited[node->id]) {
+            /* Set dl_id for deadlock_recover */
             if (node->id < NLOCK) {
-                printf("Killing p%d\n", RAG[node->id]->id - NLOCK);
-                printf("DEADLOCK: L%lu", node->id);
+                dl_id = node->id;
+                kprintf("DEADLOCK DETECTED:\tL%d", node->id);
             } else {
-                printf("Killing p%d\n", node->id - NLOCK);
-                printf("DEADLOCK: p%lu", node->id - NLOCK);
+                dl_id = RAG[node->id]->id;
+                kprintf("DEADLOCK DETECTED:\tp%d", node->id - NLOCK);
             }
             
             return 1;
@@ -197,9 +145,9 @@ static int has_cycle(int curr)
             /* Recursively check for cycles */
             if (has_cycle(node->id)) {
                 if (node->id < NLOCK)
-                    printf(" <- L%lu", node->id);
+                    kprintf(" <- L%d", node->id);
                 else
-                    printf(" <- p%lu", node->id - NLOCK);
+                    kprintf(" <- p%d", node->id - NLOCK);
                 
                 return 1;
             }
@@ -207,4 +155,39 @@ static int has_cycle(int curr)
     }
 
     return 0;
+}
+
+void deadlock_recover()
+{
+    pid32 pid = RAG[dl_id]->id;
+    struct lockentry *lock = &locktab[dl_id];
+    struct RAG_Node *node;
+
+    //rag_print();
+
+    // Kill the process the lock is allocated to
+    kill(pid - NLOCK - 1);
+    kprintf("Passed kill\n");
+
+    for (node = RAG[pid]; node != NULL; node = node->next) {
+        kprintf("pid: %d, lid: %d\n", pid - NLOCK - 1, node->id + 1);
+        remove(pid - NLOCK - 1, locktab[node->id + 1].wait_queue);
+    }
+
+    // Unlock mutex
+    mutex_unlock(&lock->lock);
+ 
+    while (RAG[pid] != NULL) {
+        kprintf("%x\n", RAG[pid]);
+        rag_dealloc(pid - NLOCK - 1, RAG[pid]->id + 1);
+        kprintf("%x\n", RAG[pid]);
+        rag_print();
+        while(1);
+        //kprintf("got here\n");
+    }
+
+    // Finish clearing RAG
+    rag_dealloc(pid, dl_id);
+
+    kprintf("DEADLOCK RECOVER\tkilling pid=%d to release lockid=%d\n", pid, dl_id);
 }

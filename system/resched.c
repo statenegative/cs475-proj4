@@ -11,6 +11,7 @@ void	resched(void)		// assumes interrupts are disabled
 	pid32 oldpid = currpid;
 	struct procent *ptold;	// ptr to table entry for old process
 	struct procent *ptnew;	// ptr to table entry for new process
+	static int32 dl_timer = 0;
 
 	// If rescheduling is deferred, record attempt and return
 	if (Defer.ndefers > 0) {
@@ -38,6 +39,17 @@ void	resched(void)		// assumes interrupts are disabled
 
 	//TODO
 	preempt = QUANTUM;
+
+	// Deadlock detection
+	++dl_timer;
+	if (dl_timer >= 50) {
+		intmask mask = disable();	// disable interrupts
+		dl_timer = 0;
+		if (deadlock_detect()) {
+			deadlock_recover();
+		}
+		restore(mask);	// reenable interrupts
+	}
 
 	// Context switch to next ready process
 	ctxsw(&ptold->prstkptr, &ptnew->prstkptr);

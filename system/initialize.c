@@ -20,6 +20,8 @@ struct	procent	proctab[NPROC];	/* Process table			*/
 struct	sentry	semtab[NSEM];	/* Semaphore table			*/
 struct	memblk	memlist;	/* List of free memory blocks		*/
 struct	lockentry	locktab[NLOCK];	/* List of locks */
+//struct 	RAG_Node	*RAG[NLOCK + NPROC]; /*	Resource allocation graph */
+unsigned char RAG[NLOCK + NPROC][NLOCK + NPROC];
 
 /* Active system status */
 

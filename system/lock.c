@@ -96,18 +96,10 @@ syscall	lock_delete(lid32 lockid)
 
 	while (lptr->wait_queue->head != NULL) {
 		struct qentry *node = lptr->wait_queue->head;
+		rag_dealloc(node->pid, lockid);
 		enqueue(node->pid, readyqueue, node->key);
 		dequeue(lptr->wait_queue);
 	}
-
-	/*
-	struct qentry *curr = lptr->wait_queue->head;
-	while (curr != NULL) {
-		enqueue(curr->pid, readyqueue, curr->key);
-		curr = curr->next;
-		dequeue(lptr->wait_queue);
-	}
-	*/
 
 	resched();
 	restore(mask);
@@ -143,6 +135,7 @@ syscall	acquire(lid32 lockid)
 	//TODO END
 
 	enqueue(currpid, lptr->wait_queue, proctab[currpid].prprio);
+	rag_request(currpid, lockid);
 
 	restore(mask);				//reenable interrupts
 
@@ -157,6 +150,8 @@ syscall	acquire(lid32 lockid)
 	//TODO START
 	//TODO (RAG) - we reache this point. Must've gotten the lock! Transform request edge to allocation edge
 	//TODO END
+
+	rag_alloc(currpid, lockid);
 
 	restore(mask);				//reenable interrupts
 	return OK;
@@ -193,6 +188,7 @@ syscall	release(lid32 lockid)
 
 	remove(currpid, lptr->wait_queue);
 	mutex_unlock(&lptr->lock);
+	rag_dealloc(currpid, lockid);
 
 	restore(mask);
 	return OK;

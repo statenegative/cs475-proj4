@@ -63,24 +63,17 @@ void	philosopher(uint32 phil_id)
 		else	//eat 30% of the time
 		{
 			acquire(fork[right]);	//grab the right fork (or wait)
-			if (!fork[left])
-			{
-                kprintf("this place reached\n");
-				acquire(fork[left]);	//grab the left fork
+            //kprintf("this place reached\n");
+			acquire(fork[left]);	//grab the left fork
 
-				acquire(lock);
-				kprintf("Philosopher %d eating: nom nom nom\n", phil_id);
-				release(lock);
+			acquire(lock);
+			kprintf("Philosopher %d eating: nom nom nom\n", phil_id);
+			release(lock);
 
-				eat();
+			eat();
 
-				release(fork[left]);
-				release(fork[right]);
-			}
-			else
-			{
-				release(fork[right]);	//relinquish right fork
-			}
+			release(fork[left]);
+			release(fork[right]);
 		}
 	}
 }
